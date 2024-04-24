@@ -21,11 +21,9 @@ void process_data(const unsigned char *input_data, size_t input_length,
                   const char *output_filename, const unsigned char *key,
                   char mode, const char *algorithm, int keySize, int rounds, RSAKey *rsaKey)
 {
-
     // Determine block size based on the algorithm
-    size_t block_size = (strcmp(algorithm, "aes") == 0) ? AES_BLOCK_SIZE : (strcmp(algorithm, "des") == 0) ? DES_BLOCK_SIZE
-                                                                                                           : 1;
-
+    size_t block_size = (strcmp(algorithm, "aes") == 0) ? AES_BLOCK_SIZE : 
+                      (strcmp(algorithm, "des") == 0) ? DES_BLOCK_SIZE : 1;
     size_t output_length = ((input_length + block_size - 1) / block_size) * block_size;
     unsigned char *output_data = malloc(output_length);
     if (!output_data)
@@ -35,13 +33,11 @@ void process_data(const unsigned char *input_data, size_t input_length,
     }
     memset(output_data, 0, output_length);
 
-    // For RSA, handle the whole data as a single "block"
     if (strcmp(algorithm, "rsa") == 0)
     {
         mpz_t m, c;
         mpz_init(m);
         mpz_init(c);
-        // Import the input data into an mpz_t
         mpz_import(m, input_length, 1, sizeof(input_data[0]), 0, 0, input_data);
 
         if (mode == 'e')
@@ -50,7 +46,6 @@ void process_data(const unsigned char *input_data, size_t input_length,
             size_t count = 0;
             mpz_export(output_data, &count, 1, sizeof(output_data[0]), 0, 0, c);
             output_length = count;
-
         }
         else
         {
@@ -60,47 +55,60 @@ void process_data(const unsigned char *input_data, size_t input_length,
             output_length = count;
         }
         mpz_clear(m);
-
         mpz_clear(c);
-
     }
     else
     {
-        // Handle AES and DES in blocks as previously done
         size_t processed_length = 0;
-        size_t padding_size = block_size - (input_length % block_size);
-        padding_size = padding_size == 0 ? block_size : padding_size;
 
         for (size_t i = 0; i < input_length; i += block_size)
         {
             size_t chunk_size = (i + block_size <= input_length) ? block_size : (input_length % block_size);
-            if (mode == 'e' && chunk_size < block_size)
-            {
-                unsigned char padded_block[AES_BLOCK_SIZE];
-                memcpy(padded_block, input_data + i, chunk_size);
-                memset(padded_block + chunk_size, padding_size, padding_size);
-                input_data = padded_block;
-                chunk_size = block_size;
-            }
+            unsigned char processed_block[block_size];
+            memcpy(processed_block, input_data + i, chunk_size);
 
-            if (strcmp(algorithm, "aes") == 0)
+            if (mode == 'e')
             {
-                AES_Encrypt(input_data + i, key, output_data + processed_length, keySize, rounds);
-            }
-            else if (strcmp(algorithm, "des") == 0)
-            {
-                des_encrypt(input_data + i, output_data + processed_length, key);
-            }
-
-            if (mode == 'd' && i + block_size >= input_length)
-            {
-                padding_size = output_data[processed_length + chunk_size - 1];
-                if (padding_size <= block_size)
+                if (chunk_size < block_size) // Apply padding
                 {
-                    processed_length -= padding_size;
+                    size_t padding_size = block_size - chunk_size;
+                    memset(processed_block + chunk_size, 0, padding_size);
+                    chunk_size = block_size; // Adjust chunk_size to full block size after padding
+                }
+
+                if (strcmp(algorithm, "aes") == 0)
+                {
+                    AES_Encrypt(processed_block, key, output_data + processed_length, keySize, rounds);
+                }
+                else if (strcmp(algorithm, "des") == 0)
+                {
+                    des_encrypt(processed_block, output_data + processed_length, key);
+                }
+                processed_length += block_size;
+            }
+            else if (mode == 'd')
+            {
+                if (strcmp(algorithm, "aes") == 0)
+                {
+                    AES_Decrypt(processed_block, key, output_data + processed_length, keySize, rounds);
+                }
+                else if (strcmp(algorithm, "des") == 0)
+                {
+                    des_decrypt(processed_block, output_data + processed_length, key);
+                }
+
+                processed_length += block_size;
+
+                // Remove padding after the last block processed
+                if (i + block_size >= input_length)
+                {
+                    size_t padding_size = output_data[processed_length - 1];
+                    if (padding_size <= block_size && padding_size > 0 && padding_size <= block_size)
+                    {
+                        processed_length -= padding_size; // Adjust length to remove padding
+                    }
                 }
             }
-            processed_length += chunk_size;
         }
         output_length = processed_length;
     }
@@ -109,6 +117,7 @@ void process_data(const unsigned char *input_data, size_t input_length,
     write_file(output_filename, output_data, output_length);
     free(output_data);
 }
+
 
 int main(int argc, char **argv)
 {

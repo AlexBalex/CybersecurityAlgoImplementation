@@ -59,6 +59,8 @@ void write_file(const char *filename, const unsigned char *data, size_t length) 
 void generate_key(unsigned char *key, size_t size) {
     
     for (size_t i = 0; i < size; i++) {
-        key[i] = rand() % 256;
+       // key[i] = rand() % 256;
+       key[i] = 'm';
     }
+    key[size] = '\0';
 }
