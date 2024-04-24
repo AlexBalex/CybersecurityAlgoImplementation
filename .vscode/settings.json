@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "utils.h": "c",
+        "string.h": "c",
+        "stdlib.h": "c",
+        "errno.h": "c",
+        "time.h": "c",
+        "key_manager.h": "c",
+        "rsa.h": "c",
+        "gmp.h": "c"
+    }
+}
