@@ -65,6 +65,7 @@ void process_data(const unsigned char *input_data, size_t input_length,
         {
             size_t chunk_size = (i + block_size <= input_length) ? block_size : (input_length % block_size);
             unsigned char processed_block[block_size];
+            memset(processed_block, 0, block_size); 
             memcpy(processed_block, input_data + i, chunk_size);
 
             if (mode == 'e')
