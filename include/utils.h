@@ -10,6 +10,6 @@ unsigned char *read_file(const char *filename, size_t *length);
 void write_file(const char *filename, const unsigned char *data, size_t length);
 
 // Generates a random key of specified size
-void generate_key(unsigned char *key, size_t size);
+int generate_key(unsigned char *key, size_t key_size);
 
 #endif // UTILS_H

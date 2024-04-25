@@ -4,6 +4,8 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 unsigned char *read_file(const char *filename, size_t *length) {
     char path[1024]; // Allocate enough space for the path
@@ -56,11 +58,26 @@ void write_file(const char *filename, const unsigned char *data, size_t length) 
     fclose(file);
 }
 
-void generate_key(unsigned char *key, size_t size) {
-    
-    for (size_t i = 0; i < size; i++) {
-       // key[i] = rand() % 256;
-       key[i] = 'm';
+int generate_key(unsigned char *key, size_t key_size) {
+    // int random_fd = open("/dev/urandom", O_RDONLY);
+    // if (random_fd < 0) {
+    //     perror("Failed to open /dev/urandom");
+    //     return 0;
+    // }
+
+    // ssize_t result = read(random_fd, key, key_size);
+    // if (result < 0) {
+    //     perror("Failed to read from /dev/urandom");
+    //     close(random_fd);
+    //     return 0;
+    // }
+    // close(random_fd);
+
+    for (size_t i = 0; i < key_size; i++) {
+           key[i] = 'm';
     }
-    key[size] = '\0';
+    key[key_size] = '\0';
+
+
+    return 1;
 }

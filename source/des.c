@@ -1,7 +1,6 @@
 #include "../include/des.h"
 #include <string.h>
 #include <stdio.h>
-
 // Define the expansion table
 static const int EXPANSION_TABLE[48] = {
     32, 1, 2, 3, 4, 5,
@@ -261,11 +260,6 @@ void key_schedule(const unsigned char *master_key, unsigned char round_keys[16][
             D |= (1 << (27 - i));
         }
     }
-    for (int i = 27; i >= 0; i--)
-    {
-        printf("%u ", (D >> i) & 1);
-    }
-    printf("\n");
 
     // Generate each of the 16 subkeys
     for (int round = 0; round < 16; round++)

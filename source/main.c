@@ -22,8 +22,8 @@ void process_data(const unsigned char *input_data, size_t input_length,
                   char mode, const char *algorithm, int keySize, int rounds, RSAKey *rsaKey)
 {
     // Determine block size based on the algorithm
-    size_t block_size = (strcmp(algorithm, "aes") == 0) ? AES_BLOCK_SIZE : 
-                      (strcmp(algorithm, "des") == 0) ? DES_BLOCK_SIZE : 1;
+    size_t block_size = (strcmp(algorithm, "aes") == 0) ? AES_BLOCK_SIZE : (strcmp(algorithm, "des") == 0) ? DES_BLOCK_SIZE
+                                                                                                           : 1;
     size_t output_length = ((input_length + block_size - 1) / block_size) * block_size;
     unsigned char *output_data = malloc(output_length);
     if (!output_data)
@@ -65,7 +65,7 @@ void process_data(const unsigned char *input_data, size_t input_length,
         {
             size_t chunk_size = (i + block_size <= input_length) ? block_size : (input_length % block_size);
             unsigned char processed_block[block_size];
-            memset(processed_block, 0, block_size); 
+            memset(processed_block, 0, block_size);
             memcpy(processed_block, input_data + i, chunk_size);
 
             if (mode == 'e')
@@ -73,7 +73,7 @@ void process_data(const unsigned char *input_data, size_t input_length,
                 if (chunk_size < block_size) // Apply padding
                 {
                     size_t padding_size = block_size - chunk_size;
-                    memset(processed_block + chunk_size, 0, padding_size);
+                    memset(processed_block + chunk_size, padding_size, padding_size);
                     chunk_size = block_size; // Adjust chunk_size to full block size after padding
                 }
 
@@ -83,6 +83,7 @@ void process_data(const unsigned char *input_data, size_t input_length,
                 }
                 else if (strcmp(algorithm, "des") == 0)
                 {
+
                     des_encrypt(processed_block, output_data + processed_length, key);
                 }
                 processed_length += block_size;
@@ -97,29 +98,42 @@ void process_data(const unsigned char *input_data, size_t input_length,
                 {
                     des_decrypt(processed_block, output_data + processed_length, key);
                 }
-
-                processed_length += block_size;
-
-                // Remove padding after the last block processed
-                if (i + block_size >= input_length)
+            }
+            // Remove padding after the last block processed
+            if (i + block_size >= input_length)
+            {
+                size_t padding_size = output_data[processed_length - 1];
+                if (padding_size > 0 && padding_size <= block_size)
                 {
-                    size_t padding_size = output_data[processed_length - 1];
-                    if (padding_size <= block_size && padding_size > 0 && padding_size <= block_size)
+                    // Verify that all the padding bytes are correct
+                    int is_padding_valid = 1;
+                    for (size_t j = 0; j < padding_size; j++)
+                    {
+                        if (output_data[processed_length - 1 - j] != padding_size)
+                        {
+                            is_padding_valid = 0;
+                            break;
+                        }
+                    }
+
+                    if (is_padding_valid)
                     {
                         processed_length -= padding_size; // Adjust length to remove padding
+                    }
+                    else
+                    {
+                        // Handle error - padding is incorrect
+                        printf("Error: Invalid padding\n");
                     }
                 }
             }
         }
-        output_length = processed_length;
+
+        // Write the processed data to the output file
+        write_file(output_filename, output_data, output_length);
+        free(output_data);
     }
-
-    // Write the processed data to the output file
-    write_file(output_filename, output_data, output_length);
-    free(output_data);
 }
-
-
 int main(int argc, char **argv)
 {
     if (argc != 6)
