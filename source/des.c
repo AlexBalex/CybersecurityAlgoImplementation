@@ -1,6 +1,8 @@
 #include "../include/des.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
+
 // Define the expansion table
 static const int EXPANSION_TABLE[48] = {
     32, 1, 2, 3, 4, 5,
@@ -134,204 +136,174 @@ static const int LEFT_SHIFTS[16] = {
     1, 1, 2, 2, 2, 2, 2, 2,
     1, 2, 2, 2, 2, 2, 2, 1};
 
-static void key_schedule(const unsigned char *master_key, unsigned char round_keys[16][6]);
-static void initial_permutation(unsigned char *block);
-static void final_permutation(unsigned char *block);
-
-// Encrypts a single block (64 bits) of plaintext
-void des_encrypt(const unsigned char *plaintext, unsigned char *ciphertext, const unsigned char *key)
-{
-    unsigned char block[8];          // DES operates on 64 bits = 8 bytes
-    unsigned char round_keys[16][6]; // There are 16 rounds, each needs a 48-bit key
-
-    // Copy plaintext to block for processing
-    for (int i = 0; i < 8; i++)
-    {
-        block[i] = plaintext[i];
+uint32_t feistel(uint32_t R, uint64_t K) {
+    // Expansion E to 48 bits
+    uint64_t expandedR = 0;
+    for (int i = 0; i < 48; i++) {
+        expandedR = (expandedR << 1) | ((R >> (32 - EXPANSION_TABLE[i])) & 1);
     }
 
-    // Generate all round keys
-    key_schedule(key, round_keys);
+    // XOR with the subkey
+    expandedR ^= K;
 
-    // Initial permutation
-    initial_permutation(block);
-
-    // Main DES rounds
-    for (int round = 0; round < 16; round++)
-    {
-        // Perform the DES round processing here
-        des_round(block, round_keys[round]);
+    // S-box substitution
+    uint32_t output = 0;
+    for (int i = 0; i < 8; i++) {
+        int row = ((expandedR >> (6 * (7 - i))) & 0x20) | ((expandedR >> (6 * (7 - i) + 5)) & 1);
+        int col = (expandedR >> (6 * (7 - i) + 1)) & 0xF;
+        output <<= 4;
+        output |= S_BOX[i][row][col];
     }
 
-    // Final permutation
-    final_permutation(block);
-
-    // Copy the processed block back to ciphertext
-    for (int i = 0; i < 8; i++)
-    {
-        ciphertext[i] = block[i];
+    // P-box permutation
+    uint32_t final = 0;
+    for (int i = 0; i < 32; i++) {
+        final = (final << 1) | ((output >> (32 - PERMUTATION_TABLE[i])) & 1);
     }
+
+    return final;
 }
 
-// Decrypts a single block (64 bits) of ciphertext
-void des_decrypt(const unsigned char *ciphertext, unsigned char *plaintext, const unsigned char *key)
+void des_key_setup(const uint8_t key[8], struct des_ctx *ctx)
 {
-    unsigned char block[8];
-    unsigned char round_keys[16][6];
-
-    // Copy ciphertext to block for processing
+    uint64_t key_reg = 0;
+    // Copy the key into key_reg, ignoring parity bits
     for (int i = 0; i < 8; i++)
     {
-        block[i] = ciphertext[i];
+        key_reg <<= 8;
+        key_reg |= key[i];
     }
 
-    // Generate all round keys
-    key_schedule(key, round_keys);
-
-    // Initial permutation
-    initial_permutation(block);
-
-    // Main DES rounds, but in reverse order for decryption
-    for (int round = 15; round >= 0; round--)
-    {
-        // Perform the DES round processing in reverse order here
-        des_round(block, round_keys[round]);
-    }
-
-    // Final permutation
-    final_permutation(block);
-
-    // Copy the processed block back to plaintext
-    for (int i = 0; i < 8; i++)
-    {
-        plaintext[i] = block[i];
-    }
-}
-
-static void initial_permutation(unsigned char *block)
-{
-    unsigned char new_block[8] = {0};
-    for (int i = 0; i < 64; i++)
-    {
-        int position = INITIAL_PERMUTATION_TABLE[i] - 1;
-        int value = (block[position / 8] >> (7 - (position % 8))) & 1;
-        new_block[i / 8] |= value << (7 - (i % 8));
-    }
-    memcpy(block, new_block, 8);
-}
-
-static void final_permutation(unsigned char *block)
-{
-    unsigned char new_block[8] = {0};
-    for (int i = 0; i < 64; i++)
-    {
-        int position = FINAL_PERMUTATION_TABLE[i] - 1;
-        int value = (block[position / 8] >> (7 - (position % 8))) & 1;
-        new_block[i / 8] |= value << (7 - (i % 8));
-    }
-    memcpy(block, new_block, 8);
-}
-
-void key_schedule(const unsigned char *master_key, unsigned char round_keys[16][6])
-{
-    unsigned char key[7] = {0}; // 56 bits
-
-    // Apply PC-1 to get the 56-bit key from the 64-bit master key
+    // Apply PC-1 to the key
+    uint64_t permuted_key = 0;
     for (int i = 0; i < 56; i++)
     {
-        int bit = PC1[i] - 1;
-        if (master_key[bit / 8] & (1 << (7 - (bit % 8))))
-        {
-            key[i / 8] |= (1 << (7 - (i % 8)));
-        }
+        permuted_key <<= 1;
+        permuted_key |= (key_reg >> (64 - PC1[i])) & 0x1;
     }
 
-    unsigned int C = 0, D = 0; // 28 bits each
+    uint32_t C = (permuted_key >> 28) & 0x0FFFFFFF; // Left 28 bits
+    uint32_t D = permuted_key & 0x0FFFFFFF;         // Right 28 bits
 
-    // Load bits into C and D
-    for (int i = 0; i < 28; i++)
-    {
-        if (key[i / 8] & (1 << (7 - (i % 8))))
-        {
-            C |= (1 << (27 - i));
-        }
-        if (key[(i + 28) / 8] & (1 << (7 - ((i + 28) % 8))))
-        {
-            D |= (1 << (27 - i));
-        }
-    }
-
-    // Generate each of the 16 subkeys
+    // Generate the 16 subkeys
     for (int round = 0; round < 16; round++)
     {
-        // Left shifts
+        // Left rotations
         C = ((C << LEFT_SHIFTS[round]) | (C >> (28 - LEFT_SHIFTS[round]))) & 0x0FFFFFFF;
         D = ((D << LEFT_SHIFTS[round]) | (D >> (28 - LEFT_SHIFTS[round]))) & 0x0FFFFFFF;
 
-        // Apply PC-2
-        unsigned char round_key[6] = {0}; // 48 bits
-        unsigned int CD = (C << 28) | D;  // Concatenate C and D
-        for (int i = 0; i < 48; i++)
+        // Apply PC-2 to C and D combined to get the subkeys
+        uint64_t CD = ((uint64_t)C << 28) | (uint64_t)D;
+        ctx->key_schedule[round] = 0;
+        for (int j = 0; j < 48; j++)
         {
-            if (CD & (1L << (56 - PC2[i])))
-            {
-                round_key[i / 8] |= (1 << (7 - (i % 8)));
-            }
+            ctx->key_schedule[round] <<= 1;
+            ctx->key_schedule[round] |= (CD >> (56 - PC2[j])) & 0x1;
         }
-
-        memcpy(round_keys[round], round_key, 6); // Store the round key
     }
 }
 
-void des_round(unsigned char *block, const unsigned char *round_key)
+void des_encrypt(struct des_ctx *ctx, const uint8_t plaintext[8], uint8_t ciphertext[8])
 {
-    unsigned char expanded_block[6] = {0}; // 48 bits
-    // Expansion step
-    for (int i = 0; i < 48; i++)
-    {
-        int bit_position = EXPANSION_TABLE[i] - 1;
-        expanded_block[i / 8] |= ((block[bit_position / 8] >> (7 - (bit_position % 8))) & 1) << (7 - (i % 8));
-    }
-
-    // XOR with the round key
-    for (int i = 0; i < 6; i++)
-    {
-        expanded_block[i] ^= round_key[i];
-    }
-
-    // Substitution with S-boxes
-    unsigned char substitution_output[4] = {0}; // 32 bits output
+    uint64_t block = 0;
+    // Convert plaintext bytes into a single 64-bit block
     for (int i = 0; i < 8; i++)
     {
-        int row = ((expanded_block[(i * 6) / 8] >> (7 - ((i * 6) % 8))) & 1) << 1; // Most significant bit
-        row |= (expanded_block[(i * 6 + 5) / 8] >> (7 - ((i * 6 + 5) % 8))) & 1;   // Least significant bit
-
-        int column = 0;
-        for (int j = 1; j <= 4; j++)
-        { // Middle four bits
-            column <<= 1;
-            column |= (expanded_block[(i * 6 + j) / 8] >> (7 - ((i * 6 + j) % 8))) & 1;
-        }
-
-        unsigned char sbox_value = S_BOX[i][row][column]; // Access the correct S-box for this 6-bit segment
-        for (int j = 0; j < 4; j++)
-        {
-            // Set each bit in the output array. Output is stored in a compact form, so calculations for bit positions are necessary.
-            substitution_output[(i * 4) / 8] |= ((sbox_value >> (3 - j)) & 1) << (7 - ((i * 4 + j) % 8));
-        }
+        block <<= 8;
+        block |= plaintext[i];
     }
 
-    // Permutation step
-    unsigned char permuted_block[4] = {0};
-    for (int i = 0; i < 32; i++)
+    // Apply initial permutation (IP)
+    uint64_t permuted_block = 0;
+    for (int i = 0; i < 64; i++)
     {
-        int bit_position = PERMUTATION_TABLE[i] - 1;
-        permuted_block[i / 8] |= ((substitution_output[bit_position / 8] >> (7 - (bit_position % 8))) & 1) << (7 - (i % 8));
+        permuted_block <<= 1;
+        permuted_block |= (block >> (64 - INITIAL_PERMUTATION_TABLE[i])) & 0x1;
     }
 
-    // Combine the result with the left half of the block
-    for (int i = 0; i < 4; i++)
+    // Split the block into two halves
+    uint32_t left = (uint32_t)(permuted_block >> 32) & 0xFFFFFFFF;
+    uint32_t right = (uint32_t)(permuted_block & 0xFFFFFFFF);
+
+    // Perform 16 rounds of the Feistel network
+    for (int round = 0; round < 16; round++)
     {
-        block[i] ^= permuted_block[i];
+        uint32_t new_right = left ^ feistel(right, ctx->key_schedule[round]);
+        left = right;
+        right = new_right;
     }
+
+    // Recombine halves, switch them
+    uint64_t pre_output = ((uint64_t)right << 32) | (uint64_t)left;
+
+    // Apply final permutation (FP)
+    uint64_t final_block = 0;
+    for (int i = 0; i < 64; i++)
+    {
+        final_block <<= 1;
+        final_block |= (pre_output >> (64 - FINAL_PERMUTATION_TABLE[i])) & 0x1;
+    }
+
+    // Convert the final block back into bytes for ciphertext
+    for (int i = 0; i < 8; i++)
+    {
+        ciphertext[7 - i] = (uint8_t)(final_block & 0xFF);
+        final_block >>= 8;
+    }
+}
+
+// void des_decrypt(struct des_ctx *ctx, const uint8_t ciphertext[8], uint8_t plaintext[8]);
+
+// void initial_permutation(uint8_t block[8]);
+
+// void final_permutation(uint8_t block[8]);
+
+void generate_subkeys(const uint64_t master_key, uint64_t subkeys[16]);
+
+// Function to print the subkeys in byte format
+// void print_subkeys(struct des_ctx *ctx) {
+//     printf("DES Subkeys (in bytes):\n");
+//     for (int i = 0; i < 16; i++) {
+//         printf("Subkey %2d: ", i + 1);
+//         for (int j = 0; j < 6; j++) { // Each subkey is 48 bits, so 6 bytes
+//             printf("%02x ", (unsigned int)((ctx->key_schedule[i] >> (8 * (5 - j))) & 0xFF));
+//         }
+//         printf("\n");
+//     }
+// }
+
+int main() {
+    // Directly define key, plaintext, and expected ciphertext as hexadecimal strings
+    const char* keyStr = "0E329232EA6D0D73";
+    const char* plaintextStr = "8787878787878787";
+    const char* expectedCiphertextStr = "0000000000000000";
+    
+    uint8_t key[8], plaintext[8], ciphertext[8];
+    
+    // Convert hexadecimal strings to byte arrays
+    for (int i = 0; i < 8; i++) {
+        sscanf(&keyStr[2 * i], "%2hhx", &key[i]);
+        sscanf(&plaintextStr[2 * i], "%2hhx", &plaintext[i]);
+    }
+
+    struct des_ctx ctx;
+    des_key_setup(key, &ctx);
+    des_encrypt(&ctx, plaintext, ciphertext);
+
+    // Prepare a string from the ciphertext for comparison
+    char actualCiphertextStr[17];  // 16 characters + 1 for null-terminator
+    for (int i = 0; i < 8; i++) {
+        sprintf(&actualCiphertextStr[2 * i], "%02x", ciphertext[i]);
+    }
+
+    // Check if the actual ciphertext matches the expected
+    if (strcmp(actualCiphertextStr, expectedCiphertextStr) == 0) {
+        printf("Encryption successful: Output matches the expected ciphertext.\n");
+    } else {
+        printf("Encryption failed: Output does not match the expected ciphertext.\n");
+        printf("Actual ciphertext: %s\n", actualCiphertextStr);
+        printf("Expected  ciphertext: %s\n", actualCiphertextStr);
+    }
+
+    return 0;
 }
